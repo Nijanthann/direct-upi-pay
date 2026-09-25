@@ -1,0 +1,123 @@
+// Prisma Schema for Direct UPI Payment Web Application
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Shop {
+  id              String           @id @default(cuid())
+  shop_name       String
+  owner_id        String?
+  phone           String?
+  email           String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?
+  status          String           @default("ACTIVE")
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  users           User[]
+  upi_accounts    UpiAccount[]
+  payment_requests PaymentRequest[]
+  audit_logs      AuditLog[]
+
+  @@map("shops")
+}
+
+model User {
+  id              String           @id @default(cuid())
+  shop_id         String
+  name            String
+  email           String           @unique
+  phone           String?
+  password_hash   String
+  role            String           @default("CASHIER") // OWNER, CASHIER
+  status          String           @default("ACTIVE")  // ACTIVE, INACTIVE
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  shop            Shop             @relation(fields: [shop_id], references: [id], onDelete: Cascade)
+  created_payments PaymentRequest[] @relation("CashierPayments")
+  reported_payments PaymentRequest[] @relation("ReporterPayments")
+  audit_logs      AuditLog[]
+
+  @@index([shop_id])
+  @@index([email])
+  @@map("users")
+}
+
+model UpiAccount {
+  id              String           @id @default(cuid())
+  shop_id         String
+  upi_id          String
+  display_name    String
+  provider_name   String?
+  is_default      Boolean          @default(false)
+  status          String           @default("ACTIVE") // ACTIVE, INACTIVE
+  created_at      DateTime         @default(now())
+  updated_at      DateTime         @updatedAt
+
+  shop            Shop             @relation(fields: [shop_id], references: [id], onDelete: Cascade)
+  payment_requests PaymentRequest[]
+
+  @@index([shop_id])
+  @@index([upi_id])
+  @@map("upi_accounts")
+}
+
+model PaymentRequest {
+  id                    String      @id @default(cuid())
+  shop_id               String
+  cashier_id            String
+  upi_account_id        String
+  transaction_reference String      @unique
+  amount                Float
+  currency              String      @default("INR")
+  status                String      @default("PENDING") // PENDING, REPORTED_PAID, EXPIRED, CANCELLED, VERIFIED_SUCCESS
+  upi_uri               String
+  created_at            DateTime    @default(now())
+  expires_at            DateTime
+  reported_paid_at      DateTime?
+  reported_paid_by      String?
+  cancelled_at          DateTime?
+  updated_at            DateTime    @updatedAt
+
+  shop                  Shop        @relation(fields: [shop_id], references: [id], onDelete: Cascade)
+  cashier               User        @relation("CashierPayments", fields: [cashier_id], references: [id], onDelete: Restrict)
+  reporter              User?       @relation("ReporterPayments", fields: [reported_paid_by], references: [id], onDelete: SetNull)
+  upi_account           UpiAccount  @relation(fields: [upi_account_id], references: [id], onDelete: Restrict)
+
+  @@index([shop_id])
+  @@index([cashier_id])
+  @@index([transaction_reference])
+  @@index([status])
+  @@index([created_at])
+  @@map("payment_requests")
+}
+
+model AuditLog {
+  id              String           @id @default(cuid())
+  shop_id         String
+  user_id         String?
+  action          String           // LOGIN, LOGOUT, CREATE_UPI, UPDATE_UPI, DELETE_UPI, CREATE_PAYMENT_REQUEST, CANCEL_PAYMENT_REQUEST, REPORT_PAYMENT, CREATE_CASHIER, UPDATE_CASHIER
+  entity_type     String
+  entity_id       String?
+  metadata        String?          // JSON encoded metadata
+  created_at      DateTime         @default(now())
+
+  shop            Shop             @relation(fields: [shop_id], references: [id], onDelete: Cascade)
+  user            User?            @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([shop_id])
+  @@index([user_id])
+  @@index([action])
+  @@index([created_at])
+  @@map("audit_logs")
+}
